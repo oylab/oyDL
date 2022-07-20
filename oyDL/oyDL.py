@@ -188,9 +188,9 @@ class ResNet:
             filename = res.filename
         assert is_path_exists_or_creatable(filename), filename + ' is not a valit path'
         self.filename=filename
-        import cloudpickle
+        import dill
         with open(filename, 'wb') as dbfile:
-            cloudpickle.dump(self, dbfile)
+            dill.dump(self, dbfile)
             print('saved model')
 
 

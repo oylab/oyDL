@@ -185,7 +185,7 @@ class ResNet:
         save model
         """
         if filename==None:
-            filename = res.filename
+            filename = self.filename
         assert is_path_exists_or_creatable(filename), filename + ' is not a valit path'
         self.filename=filename
         import dill

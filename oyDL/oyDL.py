@@ -143,16 +143,11 @@ class MyLazyDataset(Dataset):
 class ResNet:
     def __init__(self, device,filename=None, network='resnet50', pretrained=True,inchans=1):
         loaded=False
-        self.device = device
+
         if isinstance(filename, str):
             try:
-                r = self.load(filename)
-                #self.device = r.device
-                self.train_data_root=r.train_data_root
-                self.class_names = r.class_names
-                self.filename=r.filename
-                self._trained = r._trained
-                self.model = r.model
+                r = ResNet.load(filename)
+                self.__dict__.update(r.__dict__)
                 loaded=True
             except:
                 print(filename + ' doesn\'t contain a model')
@@ -175,6 +170,7 @@ class ResNet:
             self._trained = False
             self.model = self.resnet(network=network, pretrained=pretrained,inchans=inchans)
             loaded=True
+        self.device = device
 
 
     #def __reduce__(self):
@@ -194,8 +190,8 @@ class ResNet:
             print('saved model')
 
 
-
-    def load(self,filename):
+    @classmethod
+    def load(cls,filename):
         """
         load model
         """

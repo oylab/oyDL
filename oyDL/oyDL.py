@@ -8,7 +8,7 @@ cudnn.benchmark = True
 plt.ion()   # interactive mode
 
 
-def hsctrans():
+def basetrans():
     from torchvision import transforms
     from torch import float
     return transforms.Compose([
@@ -23,19 +23,19 @@ def trainset(data_dir):
     from torchvision import transforms
     data_transforms = {
         'train': transforms.Compose([
-            transforms.ToTensor(),
-            transforms.ConvertImageDtype(float),
+            #transforms.ToTensor(),
+            #transforms.ConvertImageDtype(float),
             transforms.ColorJitter(brightness=.5),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomVerticalFlip(p=0.5),
         ]),
         'test': transforms.Compose([
-            transforms.ToTensor(),
-            transforms.ConvertImageDtype(float),
+            #transforms.ToTensor(),
+            #transforms.ConvertImageDtype(float),
         ]),
         'val': transforms.Compose([
-            transforms.ToTensor(),
-            transforms.ConvertImageDtype(float),
+            #transforms.ToTensor(),
+            #transforms.ConvertImageDtype(float),
         ]),
     }
 
@@ -95,7 +95,7 @@ def pil_loader_grey(path: str) -> Image.Image:
 
 from torchvision.datasets import ImageFolder
 class PathDataset(ImageFolder):
-    def __init__(self, paths, transform=hsctrans(),loader=pil_loader_grey):
+    def __init__(self, paths, transform=basetrans(),loader=pil_loader_grey):
         from natsort import natsorted
         import itertools
         import glob
@@ -199,7 +199,7 @@ class ResNet:
         import torch.optim as optim
         from torch.optim import lr_scheduler
         self.class_names = dataloaders['train'].dataset.dataset.dataset.classes
-        self.data_root = dataloaders['train'].dataset.dataset.dataset.root
+        [self.data_root.append(x) for x in dataloaders['train'].dataset.dataset.dataset.root if x not in self.data_root]
         device = self.device
         model = self.model
         model = model.to(device)

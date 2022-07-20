@@ -141,23 +141,72 @@ class MyLazyDataset(Dataset):
 
 
 class ResNet:
-    def __init__(self, device,network='resnet50', pretrained=True,inchans=1):
-        self.model_urls = {
-            "resnet18": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
-            "resnet34": "https://download.pytorch.org/models/resnet34-b627a593.pth",
-            "resnet50": "https://download.pytorch.org/models/resnet50-0676ba61.pth",
-            "resnet101": "https://download.pytorch.org/models/resnet101-63fe2227.pth",
-            "resnet152": "https://download.pytorch.org/models/resnet152-394f9c45.pth",
-            "resnext50_32x4d": "https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth",
-            "resnext101_32x8d": "https://download.pytorch.org/models/resnext101_32x8d-8ba56ff5.pth",
-            "wide_resnet50_2": "https://download.pytorch.org/models/wide_resnet50_2-95faca4d.pth",
-            "wide_resnet101_2": "https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth",
-        }
+    def __init__(self, device,filename=None, network='resnet50', pretrained=True,inchans=1):
+        loaded=False
         self.device = device
-        self.data_root=[]
-        self.class_names = []
-        self._trained = False
-        self.model = self.resnet(network=network, pretrained=pretrained,inchans=inchans)
+        if isinstance(filename, str):
+            try:
+                r = self.load(filename)
+                #self.device = r.device
+                self.train_data_root=r.train_data_root
+                self.class_names = r.class_names
+                self.filename=r.filename
+                self._trained = r._trained
+                self.model = r.model
+                loaded=True
+            except:
+                print(filename + ' doesn\'t contain a model')
+        if not loaded:
+            self.model_urls = {
+                "resnet18": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
+                "resnet34": "https://download.pytorch.org/models/resnet34-b627a593.pth",
+                "resnet50": "https://download.pytorch.org/models/resnet50-0676ba61.pth",
+                "resnet101": "https://download.pytorch.org/models/resnet101-63fe2227.pth",
+                "resnet152": "https://download.pytorch.org/models/resnet152-394f9c45.pth",
+                "resnext50_32x4d": "https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth",
+                "resnext101_32x8d": "https://download.pytorch.org/models/resnext101_32x8d-8ba56ff5.pth",
+                "wide_resnet50_2": "https://download.pytorch.org/models/wide_resnet50_2-95faca4d.pth",
+                "wide_resnet101_2": "https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth",
+            }
+            #self.device = device
+            self.train_data_root=[]
+            self.class_names = []
+            self.filename=''
+            self._trained = False
+            self.model = self.resnet(network=network, pretrained=pretrained,inchans=inchans)
+            loaded=True
+
+
+    #def __reduce__(self):
+    #    return (self.__class__,(self.filename,))
+
+    def save(self,filename=None):
+        """
+        save model
+        """
+        if filename==None:
+            filename = res.filename
+        assert is_path_exists_or_creatable(filename), filename + ' is not a valit path'
+        self.filename=filename
+        import cloudpickle
+        with open(filename, 'wb') as dbfile:
+            cloudpickle.dump(self, dbfile)
+            print('saved model')
+
+
+
+    def load(self,filename):
+        """
+        load model
+        """
+        assert is_path_exists_or_creatable(filename), filename + ' is not a valit path'
+        import dill
+        with open(filename, 'rb') as dbfile:
+            r=dill.load(dbfile)
+            print('loaded model')
+        return r
+
+
 
     #function fo adjust model upload for grayscale
     def _load_pretrained(self, model, url, inchans=3):
@@ -199,7 +248,7 @@ class ResNet:
         import torch.optim as optim
         from torch.optim import lr_scheduler
         self.class_names = dataloaders['train'].dataset.dataset.dataset.classes
-        [self.data_root.append(x) for x in dataloaders['train'].dataset.dataset.dataset.root if x not in self.data_root]
+        [self.train_data_root.append(x) for x in dataloaders['train'].dataset.dataset.dataset.root if x not in self.train_data_root]
         device = self.device
         model = self.model
         model = model.to(device)
@@ -447,6 +496,70 @@ class ResNet:
         from sklearn import metrics
         print(metrics.classification_report(labels,preds,target_names=class_names))
 
+
+
+
+
+
+
+def is_pathname_valid(pathname: str) -> bool:
+    '''
+    `True` if the passed pathname is a valid pathname for the current OS;
+    `False` otherwise.
+    '''
+    import errno, os, sys
+    ERROR_INVALID_NAME = 123
+    try:
+        if not isinstance(pathname, str) or not pathname:
+            return False
+        _, pathname = os.path.splitdrive(pathname)
+        root_dirname = os.environ.get('HOMEDRIVE', 'C:') \
+            if sys.platform == 'win32' else os.path.sep
+        assert os.path.isdir(root_dirname)
+        root_dirname = root_dirname.rstrip(os.path.sep) + os.path.sep
+        for pathname_part in pathname.split(os.path.sep):
+            try:
+                os.lstat(root_dirname + pathname_part)
+            except OSError as exc:
+                if hasattr(exc, 'winerror'):
+                    if exc.winerror == ERROR_INVALID_NAME:
+                        return False
+                elif exc.errno in {errno.ENAMETOOLONG, errno.ERANGE}:
+                    return False
+    except TypeError as exc:
+        return False
+    else:
+        return True
+
+def is_path_creatable(pathname: str) -> bool:
+    '''
+    `True` if the current user has sufficient permissions to create the passed
+    pathname; `False` otherwise.
+    '''
+    import os
+    # Parent directory of the passed path. If empty, we substitute the current
+    # working directory (CWD) instead.
+    dirname = os.path.dirname(pathname) or os.getcwd()
+    return os.access(dirname, os.W_OK)
+
+def is_path_exists_or_creatable(pathname: str) -> bool:
+    '''
+    `True` if the passed pathname is a valid pathname for the current OS _and_
+    either currently exists or is hypothetically creatable; `False` otherwise.
+
+    This function is guaranteed to _never_ raise exceptions.
+    '''
+    import os
+    try:
+        # To prevent "os" module calls from raising undesirable exceptions on
+        # invalid pathnames, is_pathname_valid() is explicitly called first.
+        return is_pathname_valid(pathname) and (
+            os.path.exists(pathname) or is_path_creatable(pathname))
+    # Report failure on non-fatal filesystem complaints (e.g., connection
+    # timeouts, permissions issues) implying this path to be inaccessible. All
+    # other exceptions are unrelated fatal issues and should not be caught here.
+    except OSError:
+        return False
 
 def imshow(inp, title=None):
     """Imshow for Tensor."""

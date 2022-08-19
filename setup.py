@@ -15,7 +15,7 @@ cuda_win_deps = ['cupy-cuda112',
 
 setup(
     name='oyDL',
-    version='0.0.0',
+    version='0.0.1',
     description='some torch utilities, Oyler-Yaniv lab @HMS',
     author='Alon Oyler-Yaniv',
     url='https://github.com/oylab/oyDL',

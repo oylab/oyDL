@@ -5,114 +5,156 @@ import matplotlib.pyplot as plt
 import copy
 
 cudnn.benchmark = True
-plt.ion()   # interactive mode
+plt.ion()  # interactive mode
 
 
 def basetrans():
     from torchvision import transforms
     from torch import float
-    return transforms.Compose([
-        transforms.ToTensor(),
-        transforms.ConvertImageDtype(float),
-    ])
+
+    return transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.ConvertImageDtype(float),
+        ]
+    )
+
 
 def trainset(data_dir):
     from oyDL import PathDataset, MyLazyDataset, pil_loader_grey
     from torch.utils.data import Dataset, Subset, WeightedRandomSampler, DataLoader
     from torch import float
     from torchvision import transforms
+
     data_transforms = {
-        'train': transforms.Compose([
-            #transforms.ToTensor(),
-            #transforms.ConvertImageDtype(float),
-            transforms.ColorJitter(brightness=.5),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomVerticalFlip(p=0.5),
-        ]),
-        'test': transforms.Compose([
-            #transforms.ToTensor(),
-            #transforms.ConvertImageDtype(float),
-        ]),
-        'val': transforms.Compose([
-            #transforms.ToTensor(),
-            #transforms.ConvertImageDtype(float),
-        ]),
+        "train": transforms.Compose(
+            [
+                # transforms.ToTensor(),
+                # transforms.ConvertImageDtype(float),
+                transforms.ColorJitter(brightness=0.5),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomVerticalFlip(p=0.5),
+            ]
+        ),
+        "test": transforms.Compose(
+            [
+                # transforms.ToTensor(),
+                # transforms.ConvertImageDtype(float),
+            ]
+        ),
+        "val": transforms.Compose(
+            [
+                # transforms.ToTensor(),
+                # transforms.ConvertImageDtype(float),
+            ]
+        ),
     }
 
     from torchvision import datasets
-    dataset = PathDataset(data_dir, loader=pil_loader_grey)
-    _,counts = np.unique(dataset.targets, return_counts=True)
-    class_weights = np.sum(counts)/counts
 
-    trans_dataset = {x: MyLazyDataset(dataset,data_transforms[x])
-                      for x in ['train', 'test', 'val']}
+    dataset = PathDataset(data_dir, loader=pil_loader_grey)
+    _, counts = np.unique(dataset.targets, return_counts=True)
+    class_weights = np.sum(counts) / counts
+
+    trans_dataset = {
+        x: MyLazyDataset(dataset, data_transforms[x]) for x in ["train", "test", "val"]
+    }
 
     # this is the full dataset! at this point we havent picked indices yet.
-    dataloader_full = DataLoader(trans_dataset['test'], batch_size=64,
-                                                  shuffle=False, num_workers=8)
+    dataloader_full = DataLoader(
+        trans_dataset["test"], batch_size=64, shuffle=False, num_workers=8
+    )
 
     # Create the index splits for training, validation and test
     train_size = 0.7
     num_train = len(dataset)
     indices = list(range(num_train))
     split = int(np.floor(train_size * num_train))
-    split2 = int(np.floor((train_size+(1-train_size)/2) * num_train))
+    split2 = int(np.floor((train_size + (1 - train_size) / 2) * num_train))
     np.random.shuffle(indices)
-    idx = {'train': indices[:split],'test': indices[split:split2],'val': indices[split2:]}
+    idx = {
+        "train": indices[:split],
+        "test": indices[split:split2],
+        "val": indices[split2:],
+    }
 
-    image_datasets = {x: Subset(trans_dataset[x],indices=idx[x])
-                      for x in ['train', 'test', 'val']}
+    image_datasets = {
+        x: Subset(trans_dataset[x], indices=idx[x]) for x in ["train", "test", "val"]
+    }
 
-    sample_weights = {x: [class_weights[image_datasets[x].dataset.dataset.targets[i]] for i in image_datasets[x].indices]
-    for x in ['train', 'test', 'val']}
+    sample_weights = {
+        x: [
+            class_weights[image_datasets[x].dataset.dataset.targets[i]]
+            for i in image_datasets[x].indices
+        ]
+        for x in ["train", "test", "val"]
+    }
 
     # for class balancing
-    sampler = {x: WeightedRandomSampler(sample_weights[x], len(sample_weights[x]))
-    for x in ['train', 'test', 'val']}
+    sampler = {
+        x: WeightedRandomSampler(sample_weights[x], len(sample_weights[x]))
+        for x in ["train", "test", "val"]
+    }
 
-    batch_size = {'train': 32, 'test': 200, 'val': 200}
+    batch_size = {"train": 32, "test": 200, "val": 200}
 
+    dataloaders = {
+        x: DataLoader(
+            image_datasets[x],
+            batch_size=batch_size[x],
+            shuffle=False,
+            num_workers=8,
+            sampler=sampler[x],
+        )
+        for x in ["train", "test", "val"]
+    }
 
-    dataloaders = {x: DataLoader(image_datasets[x], batch_size=batch_size[x],
-                                                 shuffle=False, num_workers=8, sampler=sampler[x])
-                      for x in ['train', 'test', 'val']}
-
-    dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'test','val']}
+    dataset_sizes = {x: len(image_datasets[x]) for x in ["train", "test", "val"]}
     class_names = dataset.classes
 
-    return dataloaders,dataloader_full, dataset_sizes, class_names
+    return dataloaders, dataloader_full, dataset_sizes, class_names
+
 
 # define loader for grayscale tiff
 
 from PIL import Image
+
+
 def pil_loader_grey(path: str) -> Image.Image:
     from cv2 import normalize
+
     img = Image.open(path)
     data = np.array(img)
-    img = Image.fromarray(data-np.percentile(data, 0.01))/(np.percentile(data, 99.5)-np.percentile(data, 0.01))
+    img = Image.fromarray(data - np.percentile(data, 0.01)) / (
+        np.percentile(data, 99.5) - np.percentile(data, 0.01)
+    )
     return img
 
 
 from torchvision.datasets import ImageFolder
+
+
 class PathDataset(ImageFolder):
-    def __init__(self, paths, transform=basetrans(),loader=pil_loader_grey):
+    def __init__(self, paths, transform=basetrans(), loader=pil_loader_grey):
         from natsort import natsorted
         import itertools
         import glob
 
-
         if not (isinstance(paths, list) or isinstance(paths, np.ndarray)):
-                paths = [paths]
-        self.root=paths
-        files = [glob.glob(path+'*.tif') for path in paths]
+            paths = [paths]
+        self.root = paths
+        files = [glob.glob(path + "*.tif") for path in paths]
         files = list(itertools.chain.from_iterable(files))
         self.files = files
         self.transform = transform
-        self.labels = [filepath.split('/')[-2] for filepath in self.files]
+        self.labels = [filepath.split("/")[-2] for filepath in self.files]
         self.classes = natsorted(list(set(self.labels)))
-        self.targets = [il for l in self.labels for il, L in enumerate(self.classes) if l==L]
+        self.targets = [
+            il for l in self.labels for il, L in enumerate(self.classes) if l == L
+        ]
 
         self.loader = loader
+
     def __getitem__(self, item):
         file = self.files[item]
         target = self.targets[item]
@@ -121,13 +163,16 @@ class PathDataset(ImageFolder):
         if self.transform is not None:
             file = self.transform(file)
         return file, target, label
+
     def __len__(self):
         return len(self.files)
+
 
 class MyLazyDataset(Dataset):
     def __init__(self, dataset, transform=None):
         self.dataset = dataset
         self.transform = transform
+
     def __getitem__(self, index):
         if self.transform:
             x = self.transform(self.dataset[index][0])
@@ -135,22 +180,25 @@ class MyLazyDataset(Dataset):
             x = self.dataset[index][0]
         y = self.dataset[index][1]
         z = self.dataset[index][2]
-        return x, y ,z
+        return x, y, z
+
     def __len__(self):
         return len(self.dataset)
 
 
 class ResNet:
-    def __init__(self, device,filename=None, network='resnet50', pretrained=True,inchans=1):
-        loaded=False
+    def __init__(
+        self, device, filename=None, network="resnet50", pretrained=True, inchans=1
+    ):
+        loaded = False
 
         if isinstance(filename, str):
             try:
                 r = ResNet.load(filename)
                 self.__dict__.update(r.__dict__)
-                loaded=True
+                loaded = True
             except:
-                print(filename + ' doesn\'t contain a model')
+                print(filename + " doesn't contain a model")
         if not loaded:
             self.model_urls = {
                 "resnet18": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
@@ -163,79 +211,84 @@ class ResNet:
                 "wide_resnet50_2": "https://download.pytorch.org/models/wide_resnet50_2-95faca4d.pth",
                 "wide_resnet101_2": "https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth",
             }
-            #self.device = device
-            self.train_data_root=[]
+            # self.device = device
+            self.train_data_root = []
             self.class_names = []
-            self.filename=''
+            self.filename = ""
             self._trained = False
-            self.model = self.resnet(network=network, pretrained=pretrained,inchans=inchans)
-            loaded=True
+            self.model = self.resnet(
+                network=network, pretrained=pretrained, inchans=inchans
+            )
+            loaded = True
         self.device = device
 
-
-    #def __reduce__(self):
+    # def __reduce__(self):
     #    return (self.__class__,(self.filename,))
 
-    def save(self,filename=None):
+    def save(self, filename=None):
         """
         save model
         """
-        if filename==None:
+        if filename == None:
             filename = self.filename
-        assert is_path_exists_or_creatable(filename), filename + ' is not a valit path'
-        self.filename=filename
+        assert is_path_exists_or_creatable(filename), filename + " is not a valit path"
+        self.filename = filename
         import dill
-        with open(filename, 'wb') as dbfile:
-            dill.dump(self, dbfile)
-            print('saved model')
 
+        with open(filename, "wb") as dbfile:
+            dill.dump(self, dbfile)
+            print("saved model")
 
     @classmethod
-    def load(cls,filename):
+    def load(cls, filename):
         """
         load model
         """
-        assert is_path_exists_or_creatable(filename), filename + ' is not a valit path'
+        assert is_path_exists_or_creatable(filename), filename + " is not a valit path"
         import dill
-        with open(filename, 'rb') as dbfile:
-            r=dill.load(dbfile)
-            print('loaded model')
+
+        with open(filename, "rb") as dbfile:
+            r = dill.load(dbfile)
+            print("loaded model")
         return r
 
-
-
-    #function fo adjust model upload for grayscale
+    # function fo adjust model upload for grayscale
     def _load_pretrained(self, model, url, inchans=3):
         from torch.utils import model_zoo
         import torch.nn as nn
+
         state_dict = model_zoo.load_url(url)
         if inchans == 1:
-            conv1_weight = state_dict['conv1.weight']
-            #state_dict['conv1.weight'] = conv1_weight.sum(dim=1, keepdim=True)
-            state_dict['conv1.weight'] = conv1_weight[:,[0],:,:]
-            model.conv1 = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+            conv1_weight = state_dict["conv1.weight"]
+            # state_dict['conv1.weight'] = conv1_weight.sum(dim=1, keepdim=True)
+            state_dict["conv1.weight"] = conv1_weight[:, [0], :, :]
+            model.conv1 = nn.Conv2d(
+                1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
+            )
         elif inchans != 3:
             assert False, "Invalid number of inchans for pretrained weights"
-        #model.load_state_dict(state_dict,strict=False)
+        # model.load_state_dict(state_dict,strict=False)
         try:
-            model.load_state_dict(state_dict,strict=False)
+            model.load_state_dict(state_dict, strict=False)
         except RuntimeError as e:
             print('Ignoring "' + str(e) + '"')
 
-
-    def resnet(self,network='resnet50',pretrained=False, inchans=3):
+    def resnet(self, network="resnet50", pretrained=False, inchans=3):
         """Constructs a ResNet-50 model.
         Args:
             pretrained (bool): If True, returns a model pre-trained on ImageNet
         """
         from torchvision.models import ResNet
         from torchvision.models.resnet import Bottleneck
+
         model = ResNet(Bottleneck, [3, 4, 6, 3])
         if pretrained:
             self._load_pretrained(model, self.model_urls[network], inchans=inchans)
         return model
 
-    def train_model(self, dataloaders, criterion=None, optimizer=None, scheduler=None, num_epochs=25):
+    def train_model(
+        self, dataloaders, criterion=None, optimizer=None, scheduler=None, num_epochs=25
+    ):
 
         import time
         import copy
@@ -243,8 +296,13 @@ class ResNet:
         import torch.nn as nn
         import torch.optim as optim
         from torch.optim import lr_scheduler
-        self.class_names = dataloaders['train'].dataset.dataset.dataset.classes
-        [self.train_data_root.append(x) for x in dataloaders['train'].dataset.dataset.dataset.root if x not in self.train_data_root]
+
+        self.class_names = dataloaders["train"].dataset.dataset.dataset.classes
+        [
+            self.train_data_root.append(x)
+            for x in dataloaders["train"].dataset.dataset.dataset.root
+            if x not in self.train_data_root
+        ]
         device = self.device
         model = self.model
         model = model.to(device)
@@ -262,69 +320,74 @@ class ResNet:
         best_acc = 0.0
 
         for epoch in range(num_epochs):
-            print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-            print('-' * 10)
+            print("Epoch {}/{}".format(epoch, num_epochs - 1))
+            print("-" * 10)
 
             # Each epoch has a training and validation phase
-            for phase in ['train', 'val']:
-                if phase == 'train':
+            for phase in ["train", "val"]:
+                if phase == "train":
                     model.train()  # Set model to training mode
                 else:
-                    model.eval()   # Set model to evaluate mode
+                    model.eval()  # Set model to evaluate mode
 
                 running_loss = 0.0
                 running_corrects = 0
 
                 # Iterate over data.
-                for inputs, targets,_ in dataloaders[phase]:
+                for inputs, targets, _ in dataloaders[phase]:
                     inputs = inputs.to(device)
                     targets = targets.to(device)
                     # zero the parameter gradients
                     optimizer.zero_grad()
                     # forward
                     # track history if only in train
-                    with set_grad_enabled(phase == 'train'):
+                    with set_grad_enabled(phase == "train"):
                         outputs = model(inputs)
                         _, preds = max(outputs, 1)
                         loss = criterion(outputs, targets)
 
                         # backward + optimize only if in training phase
-                        if phase == 'train':
+                        if phase == "train":
                             loss.backward()
                             optimizer.step()
 
                     # statistics
                     running_loss += loss.item() * inputs.size(0)
                     running_corrects += sum(preds == targets.data)
-                if phase == 'train':
+                if phase == "train":
                     scheduler.step()
 
                 epoch_loss = running_loss / dataloaders[phase].dataset.__len__()
-                epoch_acc = running_corrects.double() / dataloaders[phase].dataset.__len__()
+                epoch_acc = (
+                    running_corrects.double() / dataloaders[phase].dataset.__len__()
+                )
 
-                print('{} Loss: {:.4f} Acc: {:.4f}'.format(
-                    phase, epoch_loss, epoch_acc))
+                print(
+                    "{} Loss: {:.4f} Acc: {:.4f}".format(phase, epoch_loss, epoch_acc)
+                )
                 # deep copy the model
-                if phase == 'val' and epoch_acc > best_acc:
+                if phase == "val" and epoch_acc > best_acc:
                     best_acc = epoch_acc
                     best_model_wts = copy.deepcopy(model.state_dict())
 
             print()
 
         time_elapsed = time.time() - since
-        print('Training complete in {:.0f}m {:.0f}s'.format(
-            time_elapsed // 60, time_elapsed % 60))
-        print('Best val Acc: {:4f}'.format(best_acc))
+        print(
+            "Training complete in {:.0f}m {:.0f}s".format(
+                time_elapsed // 60, time_elapsed % 60
+            )
+        )
+        print("Best val Acc: {:4f}".format(best_acc))
 
         # load best model weights
         model.load_state_dict(best_model_wts)
-        self._trained=True
-        self.model=model
+        self._trained = True
+        self.model = model
 
-
-
-    def visualize_model(self, loader ,num_images=12, numcolumns = 4):
+    def visualize_model(self, loader, num_images=12, numcolumns=4):
         from torch import no_grad, max, sum
+
         device = self.device
         model = self.model
         model = model.to(device)
@@ -334,7 +397,6 @@ class ResNet:
         images_so_far = 0
         fig = plt.figure()
 
-
         with no_grad():
             for i, (inputs, targets, labels) in enumerate(loader):
                 inputs = inputs.to(device)
@@ -342,18 +404,28 @@ class ResNet:
                 outputs = model(inputs)
                 _, preds = max(outputs, 1)
 
-
                 for j in range(inputs.size()[0]):
                     images_so_far += 1
-                    ax = plt.subplot(int(np.ceil(num_images/numcolumns)), numcolumns, images_so_far)
-                    ax.axis('off')
+                    ax = plt.subplot(
+                        int(np.ceil(num_images / numcolumns)), numcolumns, images_so_far
+                    )
+                    ax.axis("off")
                     try:
                         if labels[j] in class_names:
-                            ax.set_title('predicted: {}'.format(class_names[preds[j]])+' ground truth: {}'.format(labels[j]))
+                            ax.set_title(
+                                "predicted: {}".format(class_names[preds[j]])
+                                + " ground truth: {}".format(labels[j])
+                            )
                         else:
-                            ax.set_title('predicted: {}'.format(class_names[preds[j]])+' ground truth: Unknown')
+                            ax.set_title(
+                                "predicted: {}".format(class_names[preds[j]])
+                                + " ground truth: Unknown"
+                            )
                     except:
-                        ax.set_title('predicted: {}'.format(class_names[preds[j]])+' ground truth: Unknown')
+                        ax.set_title(
+                            "predicted: {}".format(class_names[preds[j]])
+                            + " ground truth: Unknown"
+                        )
                     imshow(inputs.cpu().data[j])
 
                     if images_so_far == num_images:
@@ -361,33 +433,34 @@ class ResNet:
                         return
             model.train(mode=was_training)
 
-
-
     def getActivationsByType(self, dataloader_full, layertype=None):
         from functools import partial
         import collections
         import copy
         import torch.nn as nn
         from torch import no_grad, cat
-        if layertype==None:
+
+        if layertype == None:
             layertype = nn.AdaptiveAvgPool2d
 
         device = self.device
         model_ft = copy.deepcopy(self.model)
         # a dictionary that keeps saving the activations as they come
         activations = collections.defaultdict(list)
+
         def save_activation(name, mod, inp, out):
             activations[name].append(out.cpu())
+
         # Registering hooks for all the Conv2d layers
         # Note: Hooks are called EVERY TIME the module performs a forward pass. For modules that are
         # called repeatedly at different stages of the forward pass (like RELUs), this will save different
         # activations. Editing the forward pass code to save activations is the way to go for these cases.
         handles = []
         for name, m in model_ft.named_modules():
-            if type(m)==layertype:
+            if type(m) == layertype:
                 # partial to assign the layer name to each hook
                 handles.append(m.register_forward_hook(partial(save_activation, name)))
-        labelsssss=[]
+        labelsssss = []
         # forward pass through the full dataset
         for (inputs, targets, labels) in dataloader_full:
             inputs = inputs.to(device)
@@ -401,123 +474,128 @@ class ResNet:
         labelsssss = np.array(labelsssss)
 
         # just print out the sizes of the saved activations as a sanity check
-        for k,v in activations.items():
-            print (k, v.size())
+        for k, v in activations.items():
+            print(k, v.size())
 
         # remove all hooks!
         [h.remove() for h in handles]
         return activations, labelsssss
 
-
-    def get_logits_and_labels(self,dataloader_full):
+    def get_logits_and_labels(self, dataloader_full):
         from torch import no_grad
-        outcp=[]
-        labelsssss=[]
+
+        outcp = []
+        labelsssss = []
         device = self.device
         model_ft = copy.deepcopy(self.model)
-        #m = nn.Softmax(dim=1)
+        # m = nn.Softmax(dim=1)
         with no_grad():
-            for i, (inputs, targets,_) in enumerate(dataloader_full):
+            for i, (inputs, targets, _) in enumerate(dataloader_full):
                 inputs = inputs.to(device)
                 targets = targets.to(device)
-                outputs = (model_ft(inputs))
-                outcp = outcp+([np.array(p) for p in outputs.cpu()])
+                outputs = model_ft(inputs)
+                outcp = outcp + ([np.array(p) for p in outputs.cpu()])
                 labelsssss = labelsssss + ([int(p) for p in targets.cpu()])
         outcp = np.array(outcp)
         labelsssss = np.array(labelsssss)
-        return(outcp, labelsssss)
+        return (outcp, labelsssss)
 
-    def get_softmax_and_labels(self,dataloader_full):
+    def get_softmax_and_labels(self, dataloader_full):
         import torch.nn as nn
         from torch import no_grad
+
         m = nn.Softmax(dim=1)
-        outcp=[]
-        labelsssss=[]
+        outcp = []
+        labelsssss = []
         device = self.device
         model_ft = copy.deepcopy(self.model)
         with no_grad():
-            for i, (inputs, targets,_) in enumerate(dataloader_full):
+            for i, (inputs, targets, _) in enumerate(dataloader_full):
                 inputs = inputs.to(device)
                 targets = targets.to(device)
                 outputs = m(model_ft(inputs))
-                outcp = outcp+([np.array(p) for p in outputs.cpu()])
+                outcp = outcp + ([np.array(p) for p in outputs.cpu()])
                 labelsssss = labelsssss + ([int(p) for p in targets.cpu()])
         outcp = np.array(outcp)
         labelsssss = np.array(labelsssss)
-        return(outcp, labelsssss)
+        return (outcp, labelsssss)
 
-    def get_predicts_and_labels(self,dataloader_full):
+    def get_predicts_and_labels(self, dataloader_full):
         import torch.nn as nn
         from torch import no_grad, max
-        predicts=[]
-        labelsssss=[]
+
+        predicts = []
+        labelsssss = []
         device = self.device
         model_ft = copy.deepcopy(self.model)
         with no_grad():
-            for i, (inputs, targets,_) in enumerate(dataloader_full):
+            for i, (inputs, targets, _) in enumerate(dataloader_full):
                 inputs = inputs.to(device)
                 targets = targets.to(device)
-                _, preds = max(model_ft(inputs),1)
+                _, preds = max(model_ft(inputs), 1)
                 predicts = predicts + ([int(p) for p in preds.cpu()])
                 labelsssss = labelsssss + ([int(p) for p in targets.cpu()])
         predicts = np.array(predicts)
         labelsssss = np.array(labelsssss)
-        return(predicts, labelsssss)
+        return (predicts, labelsssss)
 
     def ConfusionMatrix(self, dataloader):
         from torchmetrics import ConfusionMatrix
         from mlxtend.plotting import plot_confusion_matrix
         from torch import tensor
         import matplotlib
+
         class_names = self.class_names
         cmat = ConfusionMatrix(num_classes=len(class_names))
-        preds , labels = self.get_predicts_and_labels(dataloader)
+        preds, labels = self.get_predicts_and_labels(dataloader)
         cmat(tensor(preds), tensor(labels))
 
         cmat_tensor = cmat.compute()
         cmat = cmat_tensor.numpy()
 
-        fig, ax = plot_confusion_matrix(conf_mat=cmat, class_names=class_names, show_normed=True)
-
+        fig, ax = plot_confusion_matrix(
+            conf_mat=cmat, class_names=class_names, show_normed=True
+        )
 
     def classification_report(self, dataloader):
         from torchmetrics import ConfusionMatrix
         from mlxtend.plotting import plot_confusion_matrix
         from torch import tensor
         import matplotlib
+
         class_names = self.class_names
         cmat = ConfusionMatrix(num_classes=len(class_names))
-        preds , labels = self.get_predicts_and_labels(dataloader)
+        preds, labels = self.get_predicts_and_labels(dataloader)
 
         from sklearn import metrics
-        print(metrics.classification_report(labels,preds,target_names=class_names))
 
-
-
-
-
+        print(metrics.classification_report(labels, preds, target_names=class_names))
 
 
 def is_pathname_valid(pathname: str) -> bool:
-    '''
+    """
     `True` if the passed pathname is a valid pathname for the current OS;
     `False` otherwise.
-    '''
+    """
     import errno, os, sys
+
     ERROR_INVALID_NAME = 123
     try:
         if not isinstance(pathname, str) or not pathname:
             return False
         _, pathname = os.path.splitdrive(pathname)
-        root_dirname = os.environ.get('HOMEDRIVE', 'C:') \
-            if sys.platform == 'win32' else os.path.sep
+        root_dirname = (
+            os.environ.get("HOMEDRIVE", "C:")
+            if sys.platform == "win32"
+            else os.path.sep
+        )
         assert os.path.isdir(root_dirname)
         root_dirname = root_dirname.rstrip(os.path.sep) + os.path.sep
         for pathname_part in pathname.split(os.path.sep):
             try:
                 os.lstat(root_dirname + pathname_part)
             except OSError as exc:
-                if hasattr(exc, 'winerror'):
+                if hasattr(exc, "winerror"):
                     if exc.winerror == ERROR_INVALID_NAME:
                         return False
                 elif exc.errno in {errno.ENAMETOOLONG, errno.ERANGE}:
@@ -527,35 +605,41 @@ def is_pathname_valid(pathname: str) -> bool:
     else:
         return True
 
+
 def is_path_creatable(pathname: str) -> bool:
-    '''
+    """
     `True` if the current user has sufficient permissions to create the passed
     pathname; `False` otherwise.
-    '''
+    """
     import os
+
     # Parent directory of the passed path. If empty, we substitute the current
     # working directory (CWD) instead.
     dirname = os.path.dirname(pathname) or os.getcwd()
     return os.access(dirname, os.W_OK)
 
+
 def is_path_exists_or_creatable(pathname: str) -> bool:
-    '''
+    """
     `True` if the passed pathname is a valid pathname for the current OS _and_
     either currently exists or is hypothetically creatable; `False` otherwise.
 
     This function is guaranteed to _never_ raise exceptions.
-    '''
+    """
     import os
+
     try:
         # To prevent "os" module calls from raising undesirable exceptions on
         # invalid pathnames, is_pathname_valid() is explicitly called first.
         return is_pathname_valid(pathname) and (
-            os.path.exists(pathname) or is_path_creatable(pathname))
+            os.path.exists(pathname) or is_path_creatable(pathname)
+        )
     # Report failure on non-fatal filesystem complaints (e.g., connection
     # timeouts, permissions issues) implying this path to be inaccessible. All
     # other exceptions are unrelated fatal issues and should not be caught here.
     except OSError:
         return False
+
 
 def imshow(inp, title=None):
     """Imshow for Tensor."""
@@ -571,18 +655,140 @@ def InAxes(ax=None):
     # by default works on the current axes, otherwise give an axes handle
     import matplotlib.pyplot as plt
 
-    if ax==None:
+    if ax == None:
         ax = plt.gca()
 
     h = ax.get_children()
 
-    Xlim = ax.get_xlim();
-    Ylim = ax.get_ylim();
+    Xlim = ax.get_xlim()
+    Ylim = ax.get_ylim()
     for hi in h:
         try:
             offs = hi.get_offsets().data
-            J = np.where((offs[:,0]>Xlim[0])*(offs[:,0]<Xlim[1])*(offs[:,1]>Ylim[0])*(offs[:,1]<Ylim[1]))
+            J = np.where(
+                (offs[:, 0] > Xlim[0])
+                * (offs[:, 0] < Xlim[1])
+                * (offs[:, 1] > Ylim[0])
+                * (offs[:, 1] < Ylim[1])
+            )
             J = J[0]
         except:
             continue
     return J
+
+
+def manual_annotator(pth, class_names, dir_to_save=None, user="Teddy"):
+    """ """
+    from typing import List
+
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from magicgui import magicgui
+    from magicgui.widgets import Checkbox, Container, PushButton
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+    from natsort import natsorted
+    from scipy import stats
+    from PIL import Image
+    from datetime import datetime
+    import textwrap
+
+
+    if dir_to_save is None:
+        dir_to_save = pth
+    matplotlib.use("Agg")
+    cmaps = ["cyan", "magenta", "yellow", "red", "green", "blue"]
+    viewer = get_or_create_viewer()
+    viewer.layers.clear()
+
+    def fnamelistsFrompthcls(pth, class_names):
+        import glob
+        import os
+
+        fnames = {
+            cnm: glob.glob(
+                os.path.join(pth, cnm) + "**" + os.path.sep + "*.[tT][iI][fF]",
+                recursive=True,
+            )
+            for cnm in class_names
+        }
+        return fnames
+
+    fnmlst = fnamelistsFrompthcls(pth, class_names)
+
+    @magicgui(
+        auto_call=True,
+        pth={
+            "widget_type": "Label",
+            "value": "\n".join(textwrap.wrap(pth, 50, break_long_words=True)),
+        },
+        classes={"widget_type": "Select", "choices": class_names},
+    )
+    def widget(pth: str, classes: List[str]):
+        return ()
+
+    btn = PushButton(text="NEXT")
+    widget.insert(-1, btn)
+    widget.classes.value = []
+
+    @btn.clicked.connect
+    def _on_next_clicked():
+        if len(widget.classes.value) == 1:
+            row_to_write = [
+                widget.fl,
+                widget.cls,
+                widget.classes.value[0],
+                datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                user,
+            ]
+            _write_to_csv(
+                dir_to_save, row_to_write, csv_name="manual_classification.csv"
+            )
+            widget.cls, widget.fl = _load_next_image()
+            widget.classes.value = []
+        else:
+            print("must select one class only, didn't save anything")
+            widget.cls, widget.fl = _load_next_image()
+
+    def _load_next_image():
+        import random
+
+        random_cls = random.choice(class_names)
+        random_img = random.choice(fnmlst[random_cls])
+        viewer.layers.clear()
+        img = Image.open(random_img)
+        viewer.add_image(np.array(img))
+        return random_cls, random_img
+
+    def _write_to_csv(pth, row, csv_name="manual_classification.csv"):
+        import csv
+        from os import path
+
+        path_to_file = path.join(pth, csv_name)
+        if not path.exists(path_to_file):
+            header = ["Filename", "Ground Truth", "Manual Selection", "Time", "User"]
+            f = open(path.join(pth, csv_name), "a")
+            writer = csv.writer(f)
+            writer.writerow(header)
+        f = open(path.join(pth, csv_name), "a")
+        writer = csv.writer(f)
+        writer.writerow(row)
+        f.close()
+
+    widget.cls, widget.fl = _load_next_image()
+
+    container = Container(layout="vertical")
+    layout = container.native.layout()
+
+    layout.addWidget(widget.native)  # adding native, because we're in Qt
+
+    # container.show(run=True)
+    viewer.window.add_dock_widget(container)
+    # run()
+    matplotlib.use("Qt5Agg")
+
+
+
+def get_or_create_viewer():
+    import napari
+    return napari.current_viewer() or napari.Viewer()

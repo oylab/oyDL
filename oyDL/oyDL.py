@@ -681,23 +681,15 @@ def manual_annotator(pth, class_names, dir_to_save=None, user="Teddy"):
     """ """
     from typing import List
 
-    import matplotlib
-    import matplotlib.pyplot as plt
     import numpy as np
     from magicgui import magicgui
-    from magicgui.widgets import Checkbox, Container, PushButton
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-    from natsort import natsorted
-    from scipy import stats
+    from magicgui.widgets import Container, PushButton
     from PIL import Image
     from datetime import datetime
     import textwrap
 
-
     if dir_to_save is None:
         dir_to_save = pth
-    matplotlib.use("Agg")
-    cmaps = ["cyan", "magenta", "yellow", "red", "green", "blue"]
     viewer = get_or_create_viewer()
     viewer.layers.clear()
 
@@ -722,33 +714,43 @@ def manual_annotator(pth, class_names, dir_to_save=None, user="Teddy"):
             "widget_type": "Label",
             "value": "\n".join(textwrap.wrap(pth, 50, break_long_words=True)),
         },
-        classes={"widget_type": "Select", "choices": class_names},
     )
-    def widget(pth: str, classes: List[str]):
+    def widget(pth: str):
         return ()
+
+    def make_buttons(class_names: List[str]):
+        buttons = []
+        for class_name in class_names:
+            btn = PushButton(text=class_name)
+
+            @btn.clicked.connect
+            def _(state, name=class_name):
+                row_to_write = [
+                    widget.fl,
+                    widget.cls,
+                    name,
+                    datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                    user,
+                ]
+                _write_to_csv(
+                    dir_to_save, row_to_write, csv_name="manual_classification.csv"
+                )
+                widget.cls, widget.fl = _load_next_image()
+
+            buttons.append(btn)
+
+        return buttons
+
+    btn_group = Container()
+    btn_group.extend(make_buttons(class_names))
+    widget.insert(-1, btn_group)
 
     btn = PushButton(text="NEXT")
     widget.insert(-1, btn)
-    widget.classes.value = []
 
     @btn.clicked.connect
     def _on_next_clicked():
-        if len(widget.classes.value) == 1:
-            row_to_write = [
-                widget.fl,
-                widget.cls,
-                widget.classes.value[0],
-                datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                user,
-            ]
-            _write_to_csv(
-                dir_to_save, row_to_write, csv_name="manual_classification.csv"
-            )
-            widget.cls, widget.fl = _load_next_image()
-            widget.classes.value = []
-        else:
-            print("must select one class only, didn't save anything")
-            widget.cls, widget.fl = _load_next_image()
+        widget.cls, widget.fl = _load_next_image()
 
     def _load_next_image():
         import random
@@ -782,13 +784,12 @@ def manual_annotator(pth, class_names, dir_to_save=None, user="Teddy"):
 
     layout.addWidget(widget.native)  # adding native, because we're in Qt
 
-    # container.show(run=True)
     viewer.window.add_dock_widget(container)
-    # run()
-    matplotlib.use("Qt5Agg")
 
+    return layout
 
 
 def get_or_create_viewer():
     import napari
+
     return napari.current_viewer() or napari.Viewer()

@@ -96,7 +96,7 @@ def trainset(data_dir):
         for x in ["train", "test", "val"]
     }
 
-    batch_size = {"train": 32, "test": 200, "val": 200}
+    batch_size = {"train": 32, "test": 400, "val": 400}
 
     dataloaders = {
         x: DataLoader(
@@ -216,6 +216,7 @@ class ResNet:
             self.class_names = []
             self.filename = ""
             self._trained = False
+            self.dataloaders = None
             self.model = self.resnet(
                 network=network, pretrained=pretrained, inchans=inchans
             )
@@ -287,7 +288,7 @@ class ResNet:
         return model
 
     def train_model(
-        self, dataloaders, criterion=None, optimizer=None, scheduler=None, num_epochs=25
+        self, dataloaders=None, criterion=None, optimizer=None, scheduler=None, num_epochs=25
     ):
 
         import time
@@ -296,7 +297,23 @@ class ResNet:
         import torch.nn as nn
         import torch.optim as optim
         from torch.optim import lr_scheduler
+        import warnings
 
+        if self.dataloaders==None:
+            if dataloaders!=None:
+                self.dataloaders = dataloaders
+            else:
+                assert 'No dataloaders provided'
+        elif self.dataloaders != dataloaders:
+            if dataloaders!=None:
+                warnings.warn('Model already trained with a different dataset! Proceed with caution')
+                self.dataloaders = dataloaders
+            else:
+                dataloaders = self.dataloaders
+
+            
+        
+        
         self.class_names = dataloaders["train"].dataset.dataset.dataset.classes
         [
             self.train_data_root.append(x)
@@ -310,15 +327,18 @@ class ResNet:
         if criterion == None:
             criterion = nn.CrossEntropyLoss()
         if optimizer == None:
-            optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+            optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
         if scheduler == None:
             scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+        else:
+            scheduler = scheduler(optimizer)
 
         since = time.time()
 
         best_model_wts = copy.deepcopy(model.state_dict())
         best_acc = 0.0
-
+        train_stats={'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': [], }
+    
         for epoch in range(num_epochs):
             print("Epoch {}/{}".format(epoch, num_epochs - 1))
             print("-" * 10)
@@ -365,6 +385,13 @@ class ResNet:
                 print(
                     "{} Loss: {:.4f} Acc: {:.4f}".format(phase, epoch_loss, epoch_acc)
                 )
+                if phase=='train':
+                    train_stats['train_loss'].append(epoch_loss)
+                    train_stats['train_acc'].append(epoch_acc.tolist())
+                else:
+                    train_stats['val_loss'].append(epoch_loss)
+                    train_stats['val_acc'].append(epoch_acc.tolist())
+
                 # deep copy the model
                 if phase == "val" and epoch_acc > best_acc:
                     best_acc = epoch_acc
@@ -384,6 +411,7 @@ class ResNet:
         model.load_state_dict(best_model_wts)
         self._trained = True
         self.model = model
+        return train_stats
 
     def visualize_model(self, loader, num_images=12, numcolumns=4):
         from torch import no_grad, max, sum
@@ -488,6 +516,7 @@ class ResNet:
         labelsssss = []
         device = self.device
         model_ft = copy.deepcopy(self.model)
+        model_ft.to(device)
         # m = nn.Softmax(dim=1)
         with no_grad():
             for i, (inputs, targets, _) in enumerate(dataloader_full):

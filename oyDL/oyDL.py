@@ -31,21 +31,25 @@ def trainset(data_dir):
             [
                 # transforms.ToTensor(),
                 # transforms.ConvertImageDtype(float),
+                #transforms.CenterCrop(84),
                 transforms.ColorJitter(brightness=0.5),
                 transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomVerticalFlip(p=0.5),
+                transforms.RandomRotation(degrees=(0, 180))
             ]
         ),
         "test": transforms.Compose(
             [
                 # transforms.ToTensor(),
                 # transforms.ConvertImageDtype(float),
+                #transforms.CenterCrop(84),
             ]
         ),
         "val": transforms.Compose(
             [
                 # transforms.ToTensor(),
                 # transforms.ConvertImageDtype(float),
+                #transforms.CenterCrop(84),
             ]
         ),
     }
@@ -410,6 +414,9 @@ class ResNet:
         # load best model weights
         model.load_state_dict(best_model_wts)
         self._trained = True
+        self._criterion = criterion
+        self._optimizer = optimizer
+        self._scheduler = scheduler
         self.model = model
         return train_stats
 

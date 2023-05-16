@@ -20,12 +20,12 @@ def basetrans():
     )
 
 
-def trainset(data_dir):
+def trainset(data_dir, dataset=None):
     from oyDL import PathDataset, MyLazyDataset, pil_loader_grey
     from torch.utils.data import Dataset, Subset, WeightedRandomSampler, DataLoader
     from torch import float
     from torchvision import transforms
-
+    from copy import deepcopy
     data_transforms = {
         "train": transforms.Compose(
             [
@@ -55,23 +55,21 @@ def trainset(data_dir):
     }
 
     from torchvision import datasets
+    if dataset==None:
+        dataset = PathDataset(data_dir, loader=pil_loader_grey)
 
-    dataset = PathDataset(data_dir, loader=pil_loader_grey)
-    _, counts = np.unique(dataset.targets, return_counts=True)
+    _, counts = np.unique([dataset.targets[i] for i in dataset.indices], return_counts=True)
     class_weights = np.sum(counts) / counts
 
-    trans_dataset = {
-        x: MyLazyDataset(dataset, data_transforms[x]) for x in ["train", "test", "val"]
-    }
 
     # this is the full dataset! at this point we havent picked indices yet.
     dataloader_full = DataLoader(
-        trans_dataset["test"], batch_size=64, shuffle=False, num_workers=8
+        dataset, batch_size=64, shuffle=False, num_workers=8
     )
 
     # Create the index splits for training, validation and test
     train_size = 0.7
-    num_train = len(dataset)
+    num_train = len(dataset.indices)
     indices = list(range(num_train))
     split = int(np.floor(train_size * num_train))
     split2 = int(np.floor((train_size + (1 - train_size) / 2) * num_train))
@@ -83,12 +81,12 @@ def trainset(data_dir):
     }
 
     image_datasets = {
-        x: Subset(trans_dataset[x], indices=idx[x]) for x in ["train", "test", "val"]
+        x: MyLazyDataset(dataset, indices=idx[x], transform = data_transforms[x]) for x in ["train", "test", "val"]
     }
 
     sample_weights = {
         x: [
-            class_weights[image_datasets[x].dataset.dataset.targets[i]]
+            class_weights[image_datasets[x].dataset.targets[i]]
             for i in image_datasets[x].indices
         ]
         for x in ["train", "test", "val"]
@@ -138,6 +136,8 @@ def pil_loader_grey(path: str) -> Image.Image:
 from torchvision.datasets import ImageFolder
 
 
+
+
 class PathDataset(ImageFolder):
     def __init__(self, paths, transform=basetrans(), loader=pil_loader_grey):
         from natsort import natsorted
@@ -156,6 +156,7 @@ class PathDataset(ImageFolder):
         self.targets = [
             il for l in self.labels for il, L in enumerate(self.classes) if l == L
         ]
+        self.indices = list(range(len(self.targets)))
 
         self.loader = loader
 
@@ -173,21 +174,30 @@ class PathDataset(ImageFolder):
 
 
 class MyLazyDataset(Dataset):
-    def __init__(self, dataset, transform=None):
+    def __init__(self, dataset, transform=None, indices = None):
         self.dataset = dataset
+        self.root = dataset.root
         self.transform = transform
+        if indices is None:
+            indices = np.arange(len(dataset.targets))
+        self.indices = indices
+
+        self.targets = self.dataset.targets
+        self.labels = self.dataset.labels
+        self.classes = dataset.classes
 
     def __getitem__(self, index):
         if self.transform:
-            x = self.transform(self.dataset[index][0])
+            x = self.transform(self.dataset[self.indices[index]][0])
         else:
-            x = self.dataset[index][0]
-        y = self.dataset[index][1]
-        z = self.dataset[index][2]
+            x = self.dataset[self.indices[index]][0]
+
+        y = self.dataset[self.indices[index]][1]
+        z = self.dataset[self.indices[index]][2]
         return x, y, z
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.indices)
 
 
 class ResNet:
@@ -318,10 +328,10 @@ class ResNet:
             
         
         
-        self.class_names = dataloaders["train"].dataset.dataset.dataset.classes
+        self.class_names = dataloaders["train"].dataset.classes
         [
             self.train_data_root.append(x)
-            for x in dataloaders["train"].dataset.dataset.dataset.root
+            for x in dataloaders["train"].dataset.root
             if x not in self.train_data_root
         ]
         device = self.device
@@ -341,6 +351,7 @@ class ResNet:
 
         best_model_wts = copy.deepcopy(model.state_dict())
         best_acc = 0.0
+        best_loss = 100
         train_stats={'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': [], }
     
         for epoch in range(num_epochs):
@@ -397,8 +408,9 @@ class ResNet:
                     train_stats['val_acc'].append(epoch_acc.tolist())
 
                 # deep copy the model
-                if phase == "val" and epoch_acc > best_acc:
+                if phase == "val" and epoch_loss < best_loss:
                     best_acc = epoch_acc
+                    best_loss = epoch_loss
                     best_model_wts = copy.deepcopy(model.state_dict())
 
             print()

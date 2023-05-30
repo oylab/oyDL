@@ -147,7 +147,7 @@ class PathDataset(ImageFolder):
         if not (isinstance(paths, list) or isinstance(paths, np.ndarray)):
             paths = [paths]
         self.root = paths
-        files = [glob.glob(path + "*.tif") for path in paths]
+        files = [glob.glob(path + "/**/*.tif", recursive=True) for path in paths]
         files = list(itertools.chain.from_iterable(files))
         self.files = files
         self.transform = transform

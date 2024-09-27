@@ -58,7 +58,7 @@ def trainset(data_dir, dataset=None):
     if dataset==None:
         dataset = PathDataset(data_dir, loader=pil_loader_grey)
 
-    _, counts = np.unique([dataset.targets[i] for i in dataset.indices], return_counts=True)
+    _, counts = np.unique(dataset.targets, return_counts=True)
     class_weights = np.sum(counts) / counts
 
 
@@ -73,7 +73,9 @@ def trainset(data_dir, dataset=None):
     indices = list(range(num_train))
     split = int(np.floor(train_size * num_train))
     split2 = int(np.floor((train_size + (1 - train_size) / 2) * num_train))
+
     np.random.shuffle(indices)
+
     idx = {
         "train": indices[:split],
         "test": indices[split:split2],
@@ -86,8 +88,8 @@ def trainset(data_dir, dataset=None):
 
     sample_weights = {
         x: [
-            class_weights[image_datasets[x].dataset.targets[i]]
-            for i in image_datasets[x].indices
+            class_weights[t]
+            for t in image_datasets[x].targets
         ]
         for x in ["train", "test", "val"]
     }
@@ -123,7 +125,7 @@ from PIL import Image
 
 
 def pil_loader_grey(path: str) -> Image.Image:
-    from cv2 import normalize
+    #from cv2 import normalize
 
     img = Image.open(path)
     data = np.array(img)
@@ -182,8 +184,8 @@ class MyLazyDataset(Dataset):
             indices = np.arange(len(dataset.targets))
         self.indices = indices
 
-        self.targets = self.dataset.targets
-        self.labels = self.dataset.labels
+        self.targets = [self.dataset.targets[i] for i in indices]
+        self.labels = [self.dataset.labels[i] for i in indices]
         self.classes = dataset.classes
 
     def __getitem__(self, index):
@@ -197,7 +199,24 @@ class MyLazyDataset(Dataset):
         return x, y, z
 
     def __len__(self):
-        return len(self.indices)
+        return len(self.indices)  
+
+
+class TrackDataset(Dataset):
+    '''
+        Dataset from a oyLabImaging track object
+    '''
+    def __init__(self,track, transform=basetrans(),Channel = 'DIC N2',boxsize=64):
+        self.transform = transform
+        self.T = track.T
+        self.loader = track.get_movie(Channel=Channel,boxsize=boxsize)
+    def __getitem__(self, item):
+        label = "?"
+        file = self.loader[item]
+        file = self.transform(file)
+        return file, 0, '?'
+    def __len__(self):
+        return len(self.T)
 
 
 class ResNet:
@@ -211,8 +230,8 @@ class ResNet:
                 r = ResNet.load(filename)
                 self.__dict__.update(r.__dict__)
                 loaded = True
-            except:
-                print(filename + " doesn't contain a model")
+            except Exception as e:
+                print(filename + " doesn't contain a model ",e)
         if not loaded:
             self.model_urls = {
                 "resnet18": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
@@ -540,10 +559,10 @@ class ResNet:
         with no_grad():
             for i, (inputs, targets, _) in enumerate(dataloader_full):
                 inputs = inputs.to(device)
-                targets = targets.to(device)
+                #targets = targets.to(device)
                 outputs = model_ft(inputs)
                 outcp = outcp + ([np.array(p) for p in outputs.cpu()])
-                labelsssss = labelsssss + ([int(p) for p in targets.cpu()])
+                labelsssss = labelsssss + ([int(p) for p in targets])
         outcp = np.array(outcp)
         labelsssss = np.array(labelsssss)
         return (outcp, labelsssss)
@@ -606,18 +625,20 @@ class ResNet:
         )
 
     def classification_report(self, dataloader):
-        from torchmetrics import ConfusionMatrix
+        #from torchmetrics import ConfusionMatrix
         from mlxtend.plotting import plot_confusion_matrix
         from torch import tensor
         import matplotlib
 
         class_names = self.class_names
-        cmat = ConfusionMatrix(num_classes=len(class_names))
+        #cmat = ConfusionMatrix(num_classes=len(class_names))
         preds, labels = self.get_predicts_and_labels(dataloader)
 
         from sklearn import metrics
-
+        report = metrics.classification_report(labels, preds, target_names=class_names, output_dict=True)
         print(metrics.classification_report(labels, preds, target_names=class_names))
+        #print(report)
+        return report
 
 
 def is_pathname_valid(pathname: str) -> bool:
